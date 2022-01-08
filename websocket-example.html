@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>Chat</title>
+    </head>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css">
+    <script
+      src="https://code.jquery.com/jquery-3.6.0.min.js"
+      integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4="
+      crossorigin="anonymous">
+    </script>
+    <body>
+    <div class="container p-4">
+        <h1 class="mb-3">WebSocket Chat</h1>
+        <form id="startChat" class="box" action="">
+          <div class="field">
+            <label for="chatId">Chat</label>
+            <div class="control">
+              <input class="input"
+                     type="text"
+                     id="chatId"
+                     autocomplete="off"
+                     placeholder="Enter chat name"
+              />
+            </div>
+          </div>
+          <div class="field">
+            <label for="clientName">Client Name</label>
+            <div class="control">
+              <input class="input"
+                     type="text"
+                     id="clientName"
+                     autocomplete="off"
+                     placeholder="Enter your Name"
+              />
+            </div>
+          </div>
+          <div class="field is-grouped">
+            <div class="control">
+              <button class="button is-link">Start chat</button>
+            </div>
+          </div>
+        </form>
+        <div id="messages" class="box" style="display: none;">
+        </div>
+        <form id="sendMessage" class="box" action="" style="display: none;">
+          <div class="field">
+            <label for="messageText">Message</label>
+            <div class="control">
+              <input class="input"
+                     type="text"
+                     id="messageText"
+                     autocomplete="off"
+                     placeholder="Enter your message"
+              />
+            </div>
+          </div>
+          <div class="field is-grouped">
+            <div class="control">
+              <button class="button is-link">Send</button>
+            </div>
+          </div>
+        </form>
+    </div>
+    <script>
+      let webSocket = null;
+      let clientId = null;
+      const otherUserMessageTemplate = `
+        <article class="message">
+          <div class="message-header">
+            <p>{clientName} [#{clientID}]</p>
+          </div>
+          <div class="message-body">
+               <p>{message}</p>
+               <p>Posted: {created}</p>
+          </div>
+        </article>
+      `;
+      const userMessageTemplate = `
+        <article class="message is-info">
+          <div class="message-header">
+            <p>{clientName}(You) [#{clientID}]</p>
+          </div>
+          <div class="message-body">
+               <p>{message}</p>
+               <p>Posted: {created}</p>
+          </div>
+        </article>
+      `;
+      const userConnectedTemplate = `
+          <div class="notification is-success">
+            {clientName} (#{clientID}) is connected!
+          </div>
+      `;
+      const userDisconnectedTemplate = `
+          <div class="notification is-danger">
+            {clientName} (#{clientID}) is disconnected!
+          </div>
+      `;
+      $(document).ready(function() {
+        $('#startChat').on("submit", function (event) {
+          event.preventDefault()
+          const chatId = $("#chatId").val();
+          const clientName = $("#clientName").val();
+          if (!(chatId && clientName)){
+            alert("Please enter all needed info");
+            return;
+          }
+          try {
+            webSocket = new WebSocket(
+              "{backend_url}/ws/" + chatId + "/?client_name=" + clientName
+            );
+            $('#startChat').hide();
+            $('#sendMessage').show();
+            $('#messages').show();
+          }
+          catch (error) {
+            console.log(error);
+          }
+          webSocket.addEventListener('message', function (event) {
+            const eventData = JSON.parse(event.data);
+            console.log(eventData);
+            if (eventData.event_tag === "connection_started"){
+              clientId = eventData.client_info.client_id;
+              eventData.messages.forEach(function(message){
+              $("#messages").append(otherUserMessageTemplate.replace(
+                "{clientID}", message.client_info.client_id
+              ).replace(
+                "{message}", message.message
+              ).replace(
+                "{clientName}", message.client_info.client_name
+              ).replace("{created}", message.created))
+              document.getElementById("sendMessage").scrollIntoView({behavior: "smooth" });
+              })
+            }
+            if (eventData.event_tag === "new_message") {
+              let template;
+              const message = eventData.message;
+              if (message.client_info.client_id === clientId){
+                template = userMessageTemplate;
+              } else{
+                template = otherUserMessageTemplate;
+              }
+              $("#messages").append(template.replace(
+                "{clientID}", message.client_info.client_id
+              ).replace(
+                "{message}", message.message
+              ).replace(
+                "{clientName}", message.client_info.client_name
+              ).replace("{created}", message.created))
+              document.getElementById("sendMessage").scrollIntoView({behavior: "smooth" });
+            }
+            if (eventData.event_tag === "user_connected"){
+              $("#messages").append(userConnectedTemplate.replace(
+                "{clientID}", eventData.client_info.client_id
+              ).replace("{clientName}", eventData.client_info.client_name));
+            }
+            if (eventData.event_tag === "user_disconnected"){
+              $("#messages").append(userDisconnectedTemplate.replace(
+                "{clientID}", eventData.client_info.client_id
+              ).replace("{clientName}", eventData.client_info.client_name));
+            }
+          });
+        });
+        $('#sendMessage').on("submit", function (event) {
+          event.preventDefault()
+          const messageText = $("#messageText").val();
+          webSocket.send(JSON.stringify({
+            event_tag: "new_message",
+            message: messageText,
+          }));
+        });
+      });
+    </script>
+    </body>
+</html>
